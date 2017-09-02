@@ -1,6 +1,5 @@
 .section .data
 
-
 record1:
     .ascii "Fredrick\0"
     .rept 31

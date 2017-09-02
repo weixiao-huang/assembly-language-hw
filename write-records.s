@@ -29,11 +29,6 @@ _start:
     addl $8, %esp
 
     pushl ST_FILE_DESCRIPTOR(%ebp)
-    pushl $record1
-    call write_record
-    addl $8, %esp
-
-    pushl ST_FILE_DESCRIPTOR(%ebp)
     pushl $record2
     call write_record
     addl $8, %esp
