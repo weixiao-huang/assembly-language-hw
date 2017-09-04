@@ -19,11 +19,26 @@ current_break:
 .equ HDR_SIZE_OFFSET, 4
 
 .equ UNAVAILABLE, 0
-.equ AVAILABLE, 0
+.equ AVAILABLE, 1
 .equ SYS_BRK, 45
 .equ LINUX_SYSCALL, 0x80
 
 .equ LINK_NUM, 8
+.equ DEFAULT_SIZE_ORDER, 6
+.equ LINK_BYTE, 8
+
+.type find_initial_pointer, @function
+find_initial_pointer:
+    pushl %ebp
+    movl %esp, %ebp
+
+    movl $DEFAULT_SIZE_ORDER, %eax
+    imull $LINK_BYTE, %eax
+    subl $LINK_BYTE, %eax
+    addl heap_begin, %eax
+
+    leave
+    ret
 
 .section .text
 .globl allocate_init
@@ -40,11 +55,19 @@ allocate_init:
     movl %eax, current_break
     
     movl $LINK_NUM, %ebx
-    sall $2, %ebx
+    imull $LINK_BYTE, %ebx # get the size of LINK HEADERs
     leal (%ebx, %eax), %ebx
     movl $SYS_BRK, %eax
     int $LINUX_SYSCALL
     movl %eax, data_begin
+    movl %eax, current_break
+
+    movl current_break, %ebx
+    movl $1, %ecx
+    sall $DEFAULT_SIZE_ORDER, %ecx
+    leal (%ecx, %ebx), %ebx
+    movl $SYS_BRK, %eax
+    int $LINUX_SYSCALL
     movl %eax, current_break
 
     movl heap_begin, %eax
@@ -54,11 +77,25 @@ init_loop:
     cmpl $LINK_NUM, %ecx
     jge init_end
     movl $0, (%eax)
+    pushl %eax
+    call list_init
+    addl $4, %esp
     incl %ecx
-    addl $4, %eax
+    addl $8, %eax
     jmp init_loop
 
 init_end:
+    call find_initial_pointer
+    
+    pushl %eax
+    call list_init
+    popl %eax
+
+    pushl data_begin   # initial list node
+    pushl %eax         # initial pointer
+    call list_add_after
+    addl $8, %esp
+
     leave
     ret
 
