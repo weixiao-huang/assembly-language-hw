@@ -13,9 +13,9 @@ int main() {
     printf("0x120: 0x%x\n", a = allocate(0x10));
     printf("0x50: 0x%x\n", b = allocate(0x100));
     printf("0x50: 0x%x\n", c = allocate(0x80));
-    deallocate(a);
-    deallocate(b);
-    deallocate(c);
+    // deallocate(a);
+    // deallocate(b);
+    // deallocate(c);
     printf("0x120: 0x%x\n", a = allocate(0x10));
     printf("0x50: 0x%x\n", b = allocate(0x100));
     printf("0x50: 0x%x\n", c = allocate(0x80));
