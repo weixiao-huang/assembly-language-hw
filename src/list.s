@@ -28,7 +28,22 @@ __list_add:
 
     leave
     ret
-    
+ 
+.type __list_del, @function
+__list_del:
+    pushl %ebp
+    movl %esp, %ebp
+
+    movl 8(%ebp), %ecx      # prev
+    movl 12(%ebp), %edx     # next 
+
+    movl %edx, 4(%ecx)
+    movl %ecx, (%edx)
+
+    leave
+    ret
+       
+
 .type list_add_before, @function
 .globl list_add_before
 list_add_before:
@@ -65,3 +80,18 @@ list_add_after:
     leave
     ret
  
+.type list_del, @function
+.globl list_del
+list_del:
+    pushl %ebp
+    movl %esp, %ebp
+
+    movl 8(%ebp), %eax  # listelm
+
+    pushl 4(%eax)     # listelm->next
+    pushl (%eax)      # listelm->prev
+    call __list_del
+    addl $8, %esp
+
+    leave
+    ret

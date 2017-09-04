@@ -23,18 +23,19 @@ current_break:
 .equ SYS_BRK, 45
 .equ LINUX_SYSCALL, 0x80
 
-.equ LINK_NUM, 8
-.equ DEFAULT_SIZE_ORDER, 6
-.equ LINK_BYTE, 8
+.equ MIN_BLOCK_ORDER, 4
+.equ MAX_BLOCK_ORDER, 16
+.equ DEFAULT_SIZE_ORDER, 8
+.equ LINK_SIZE, 8
 
-.type find_initial_pointer, @function
-find_initial_pointer:
+.type find_header_by_order, @function
+find_header_by_order:
     pushl %ebp
     movl %esp, %ebp
 
-    movl $DEFAULT_SIZE_ORDER, %eax
-    imull $LINK_BYTE, %eax
-    subl $LINK_BYTE, %eax
+    movl 8(%ebp), %eax
+    subl $MIN_BLOCK_ORDER, %eax
+    imull $LINK_SIZE, %eax
     addl heap_begin, %eax
 
     leave
@@ -48,53 +49,83 @@ allocate_init:
     movl %esp, %ebp
 
 # if the brk system call is called with 0 in %ebx, it returns the first invalid address
+# get the heap_begin
     movl $SYS_BRK, %eax
     movl $0, %ebx
     int $LINUX_SYSCALL
     movl %eax, heap_begin
     movl %eax, current_break
     
-    movl $LINK_NUM, %ebx
-    imull $LINK_BYTE, %ebx # get the size of LINK HEADERs
+# allocate the linker headers (from MIN_BLOCK_ORDER to MAX_BLOCK_ORDER)
+    movl $MAX_BLOCK_ORDER, %ebx
+    subl $MIN_BLOCK_ORDER, %ebx
+    incl %ebx
+    imull $LINK_SIZE, %ebx # get the size of LINK HEADERs
     leal (%ebx, %eax), %ebx
     movl $SYS_BRK, %eax
     int $LINUX_SYSCALL
+# set data_begin
     movl %eax, data_begin
     movl %eax, current_break
 
-    movl current_break, %ebx
+# allocate (1 << DEFAULT_SIZE_ORDER) space from data_begin
+    movl data_begin, %ebx
     movl $1, %ecx
     sall $DEFAULT_SIZE_ORDER, %ecx
     leal (%ecx, %ebx), %ebx
     movl $SYS_BRK, %eax
     int $LINUX_SYSCALL
+# set final initial current_break
     movl %eax, current_break
 
+# preparing to init_loop - for init list headers
     movl heap_begin, %eax
-    movl $0, %ecx
+    movl $MIN_BLOCK_ORDER, %ecx
 
 init_loop:
-    cmpl $LINK_NUM, %ecx
-    jge init_end
-    movl $0, (%eax)
+    cmpl $MAX_BLOCK_ORDER, %ecx
+    jg init_end
     pushl %eax
     call list_init
     addl $4, %esp
     incl %ecx
-    addl $8, %eax
+    addl $LINK_SIZE, %eax
     jmp init_loop
 
 init_end:
-    call find_initial_pointer
+    pushl $DEFAULT_SIZE_ORDER
+    call find_header_by_order
     
     pushl %eax
     call list_init
     popl %eax
 
-    pushl data_begin   # initial list node
-    pushl %eax         # initial pointer
+# make data begin available
+    movl data_begin, %ecx
+    movl $AVAILABLE, 8(%ecx)
+
+# add data begin list after default order pointer header
+    pushl data_begin   # data begin list
+    pushl %eax         # default order pointer (list header)
     call list_add_after
     addl $8, %esp
+
+    leave
+    ret
+
+
+.type find_buddy, @function
+find_buddy:
+    pushl %ebp
+    movl %esp, %ebp
+
+    movl 8(%ebp), %eax      # 首地址
+
+    subl data_begin, %eax
+    movl $1, %edx
+    movb 12(%ebp), %cl
+    sall %cl, %edx     # 12(%ebp) - order
+    xorl %edx, %eax
 
     leave
     ret
@@ -108,38 +139,78 @@ allocate:
     movl %esp, %ebp
     movl ST_MEM_SIZE(%ebp), %ecx
 
-    movl heap_begin, %eax
-    movl current_break, %ebx
-loop_begin:
-    cmpl %ebx, %eax
-    je move_break
-    movl HDR_SIZE_OFFSET(%eax), %edx
-    cmpl $UNAVAILABLE, HDR_AVAIL_OFFSET(%eax)
-    je next_location
-    cmpl %edx, %ecx
-    jle allocate_here
-next_location:
-    addl $HEADER_SIZE, %eax
-    addl %edx, %eax
-    jmp loop_begin
-allocate_here:
-    movl $UNAVAILABLE, HDR_AVAIL_OFFSET(%eax)
-    addl $HEADER_SIZE, %eax
-    leave
-    ret
-move_break:
-    addl $HEADER_SIZE, %ebx
-    addl %ecx, %ebx
+    addl $12, %ecx
+    pushl %ecx
+    call round
+    movl %eax, (%esp)
+
+    movl %eax, %edx     # %edx 用于记录找到可用块的round是多少
+    call find_header_by_order   # %eax - list header pointer
+
+up_search:
+# 如果超过了header的区域，则没有找到任何可用块，准备扩容
+    cmpl data_begin, %eax
+    jge expand_capacity
+    movl %eax, %ecx
+
+up_traverse_list:
+# 只需判断链表非空即可
+    cmpl 4(%ecx), %eax 
+    je up_traverse_list_end  # 空链表
+# 找到了一个可用块 - 4(%ecx)
+    movl 4(%ecx), %ecx
+split_or_alloc:
+    cmpl (%esp), %edx   # (%esp) - 最初需要分配的内存的order
+    je allocate_here
+# 否则需要分裂空间
+# 先在对应的list中删除 %ecx
+    pushl %ecx
+    call list_del
+    popl %ecx
+
+# list header 回退一位
+    subl $LINK_SIZE, %eax
+    pushl %ecx
     pushl %eax
-    movl $SYS_BRK, %eax
-    int $LINUX_SYSCALL
+    call list_add_before
     popl %eax
+    popl %ecx
 
-    movl $UNAVAILABLE, HDR_AVAIL_OFFSET(%eax)
-    movl %ecx, HDR_SIZE_OFFSET(%eax)
-    addl $HEADER_SIZE, %eax
+    decl %edx
+    pushl %edx
+    pushl %eax
+    call find_buddy
+    pushl %eax
 
-    movl %ebx, current_break
+    pushl %eax
+    call list_init
+    movl $AVAILABLE, 8(%eax)
+
+# swap buddy address and list header
+# 8(%esp) - list header;
+# (%esp) and 4(%esp) - buddy addr;
+    movl 8(%esp), %eax
+    movl %eax, 4(%esp)
+    movl (%esp), %eax
+    movl %eax, 8(%esp)
+    popl %eax
+    call list_add_before
+
+    popl %eax
+    popl %edx
+    popl %edx
+    jmp up_traverse_list
+
+up_traverse_list_end:
+    addl $LINK_SIZE, %eax
+    incl %edx
+    jmp up_search
+
+expand_capacity:
+
+allocate_here:
+    movl $UNAVAILABLE, 8(%eax)
+    addl $12, %eax
     leave
     ret
 
