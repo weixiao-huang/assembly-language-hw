@@ -4,6 +4,9 @@
 heap_begin:
     .long 0
 
+data_begin:
+    .long 0
+
 # This points to one location past the memory we are managing
 current_break:
     .long 0
@@ -20,6 +23,8 @@ current_break:
 .equ SYS_BRK, 45
 .equ LINUX_SYSCALL, 0x80
 
+.equ LINK_NUM, 8
+
 .section .text
 .globl allocate_init
 .type allocate_init, @function
@@ -33,9 +38,22 @@ allocate_init:
     int $LINUX_SYSCALL
     movl %eax, current_break
     movl %eax, heap_begin
+    movl $0, %ecx
 
+init_loop:
+    cmpl $LINK_NUM, %ecx
+    jge init_end
+    movl $0, (%eax)
+    incl %ecx
+    addl $4, %eax
+    jmp init_loop
+
+init_end:
+    movl %eax, data_begin
+    movl %eax, current_break
     leave
     ret
+
 
 .globl allocate
 .type allocate, @function
