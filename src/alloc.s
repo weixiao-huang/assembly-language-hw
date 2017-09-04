@@ -25,8 +25,11 @@ current_break:
 
 .equ MIN_BLOCK_ORDER, 4
 .equ MAX_BLOCK_ORDER, 16
-.equ DEFAULT_SIZE_ORDER, 8
+.equ DEFAULT_SIZE_ORDER, 12
 .equ LINK_SIZE, 8
+
+
+.section .text
 
 .type find_header_by_order, @function
 find_header_by_order:
@@ -41,7 +44,6 @@ find_header_by_order:
     leave
     ret
 
-.section .text
 .globl allocate_init
 .type allocate_init, @function
 allocate_init:
@@ -76,6 +78,7 @@ allocate_init:
     movl $SYS_BRK, %eax
     int $LINUX_SYSCALL
 # set final initial current_break
+set_current_break:
     movl %eax, current_break
 
 # preparing to init_loop - for init list headers
@@ -96,13 +99,14 @@ init_end:
     pushl $DEFAULT_SIZE_ORDER
     call find_header_by_order
     
-    pushl %eax
-    call list_init
-    popl %eax
-
 # make data begin available
     movl data_begin, %ecx
     movl $AVAILABLE, 8(%ecx)
+    pushl %eax
+    pushl %ecx
+    call list_init
+    popl %ecx
+    popl %eax
 
 # add data begin list after default order pointer header
     pushl data_begin   # data begin list
@@ -126,6 +130,7 @@ find_buddy:
     movb 12(%ebp), %cl
     sall %cl, %edx     # 12(%ebp) - order
     xorl %edx, %eax
+    addl data_begin, %eax
 
     leave
     ret
@@ -164,41 +169,49 @@ split_or_alloc:
     je allocate_here
 # 否则需要分裂空间
 # 先在对应的list中删除 %ecx
+    pushl %edx
+    pushl %eax
     pushl %ecx
     call list_del
     popl %ecx
+    popl %eax
+    popl %edx
 
 # list header 回退一位
     subl $LINK_SIZE, %eax
+    pushl %edx
     pushl %ecx
     pushl %eax
     call list_add_before
     popl %eax
     popl %ecx
+    popl %edx
 
     decl %edx
+    pushl %eax
     pushl %edx
-    pushl %eax
+    pushl %ecx
     call find_buddy
-    pushl %eax
+    popl %ecx
 
     pushl %eax
     call list_init
     movl $AVAILABLE, 8(%eax)
 
-# swap buddy address and list header
-# 8(%esp) - list header;
-# (%esp) and 4(%esp) - buddy addr;
+# 12(%esp) - list header;
+# 8(%esp) - %edx;
+# 4(%esp) - buddy addr;
+# 0(%esp) - list header;
     movl 8(%esp), %eax
-    movl %eax, 4(%esp)
-    movl (%esp), %eax
-    movl %eax, 8(%esp)
-    popl %eax
+    pushl %eax
     call list_add_before
 
+gdb_test:
     popl %eax
+    addl $4, %esp
     popl %edx
-    popl %edx
+    popl %eax
+    movl %eax, %ecx
     jmp up_traverse_list
 
 up_traverse_list_end:
@@ -209,8 +222,12 @@ up_traverse_list_end:
 expand_capacity:
 
 allocate_here:
-    movl $UNAVAILABLE, 8(%eax)
-    addl $12, %eax
+    pushl %ecx
+    call list_del
+    popl %ecx
+    movl $UNAVAILABLE, 8(%ecx)
+    leal 12(%ecx), %eax
+    popl %edx
     leave
     ret
 
