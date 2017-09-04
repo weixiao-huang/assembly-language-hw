@@ -18,8 +18,7 @@ current_break:
 # Location of the size field in the header
 .equ HDR_SIZE_OFFSET, 4
 
-.equ UNAVAILABLE, 0
-.equ AVAILABLE, 1
+.equ AVAILABLE, 0
 .equ SYS_BRK, 45
 .equ LINUX_SYSCALL, 0x80
 
@@ -206,7 +205,6 @@ split_or_alloc:
     pushl %eax
     call list_add_before
 
-gdb_test:
     popl %eax
     addl $4, %esp
     popl %edx
@@ -222,20 +220,97 @@ up_traverse_list_end:
 expand_capacity:
 
 allocate_here:
+    movl %edx, 8(%ecx)
     pushl %ecx
     call list_del
     popl %ecx
-    movl $UNAVAILABLE, 8(%ecx)
     leal 12(%ecx), %eax
     popl %edx
     leave
     ret
 
+
 .globl deallocate
 .type deallocate, @function
 .equ ST_MEM_SEG, 4
 deallocate:
-    movl ST_MEM_SEG(%esp), %eax
-    subl $HEADER_SIZE, %eax
-    movl $AVAILABLE, HDR_AVAIL_OFFSET(%eax)
+    pushl %ebp
+    movl %esp, %ebp
+
+    movl 8(%ebp), %ecx  # %ecx - the addr will be deallocated
+    movl -4(%ecx), %edx # %edx - the order of allocated size
+    subl $12, %ecx
+
+check_merge_begin:
+    pushl %edx
+    pushl %ecx
+    call find_buddy     # %eax - the buddy's address
+    popl %ecx
+    popl %edx
+    
+    cmp current_break, %eax
+    jge budy_addr_overflow
+    
+    pushl %eax  # [push] the buddy's address
+
+    pushl %edx
+    call find_header_by_order   # %eax - the header addr
+    popl %edx
+    
+    pushl %eax  # [push] the header addr
+    movl 4(%eax), %eax
+
+find_addr_in_list:
+    cmpl (%esp), %eax
+    je budy_addr_not_in_list
+    cmpl 4(%esp), %eax
+    je budy_addr_in_list
+    movl 4(%eax), %eax
+    jmp find_addr_in_list
+
+budy_addr_overflow:
+    pushl %eax  # [push] the buddy's address
+
+    pushl %edx
+    call find_header_by_order   # %eax - the header addr
+    popl %edx
+    
+    pushl %eax  # [push] the header addr
+
+budy_addr_not_in_list:
+    pushl %edx
+    pushl %ecx
+    pushl %eax
+    call list_add_after
+    popl %eax
+    popl %ecx
+    popl %edx
+    movl $AVAILABLE, 8(%ecx)
+    addl $8, %esp         # 2[pop]
+    jmp deallocate_end
+
+budy_addr_in_list:
+    pushl %edx
+    pushl %ecx
+    pushl %eax
+    call list_del
+    popl %eax
+    popl %ecx
+    popl %edx
+
+    cmpl %ecx, %eax  # %eax - buddy's addr
+    cmovl %eax, %ecx
+
+    pushl %ecx
+    call list_init
+    popl %ecx
+
+    incl %edx
+
+    addl $8, %esp         # 2[pop]
+    jmp check_merge_begin
+    
+
+deallocate_end:
+    leave
     ret
