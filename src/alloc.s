@@ -36,8 +36,18 @@ allocate_init:
     movl $SYS_BRK, %eax
     movl $0, %ebx
     int $LINUX_SYSCALL
-    movl %eax, current_break
     movl %eax, heap_begin
+    movl %eax, current_break
+    
+    movl $LINK_NUM, %ebx
+    sall $2, %ebx
+    leal (%ebx, %eax), %ebx
+    movl $SYS_BRK, %eax
+    int $LINUX_SYSCALL
+    movl %eax, data_begin
+    movl %eax, current_break
+
+    movl heap_begin, %eax
     movl $0, %ecx
 
 init_loop:
@@ -49,8 +59,6 @@ init_loop:
     jmp init_loop
 
 init_end:
-    movl %eax, data_begin
-    movl %eax, current_break
     leave
     ret
 
