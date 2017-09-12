@@ -18,7 +18,7 @@ $ make dump
 
 即可在当前的dump目录中得到`bufbomb.s`文件
 
-Level 0的要求是将函数`getbuf`的返回地址重定向到函数`smoke`中，由于题目中缓冲区开始的地址为`-24(%ebp)`，而返回地址开始的地方为`4(%ebp)`，因此需要写入`48bytes`的数据，其中最后`4bytes`为`smoke`函数的地址。
+Level 0的要求是将函数`getbuf`的返回地址重定向到函数`smoke`中，由于题目中缓冲区开始的地址为`-0x24(%ebp)`，而返回地址开始的地方为`0x4(%ebp)`，因此需要写入`48bytes`的数据，其中最后`4bytes`为`smoke`函数的地址。
 
 在我们生成的文件中，`smoke`函数的地址为`0x08048b6b`，因此输入文件`raw/exploit0.txt`如下所示
 

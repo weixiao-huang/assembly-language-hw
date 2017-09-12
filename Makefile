@@ -1,42 +1,60 @@
+IMAGE      := buflab
+CONTAINER  := buflab-container
+
+DFLAGS     := --privileged --rm -it
+BASH       := /bin/bash
+
+HEX2RAW    := ./bin/hex2raw
+BUFBOMB    := ./bin/bufbomb
+MAKECOOKIE := ./bin/makecookie
+
+EXPLOIT0   := ./raw/exploit0.txt
+EXPLOIT1   := ./raw/exploit1.txt
+EXPLOIT2   := ./raw/exploit2.txt
+EXPLOIT3   := ./raw/exploit3.txt
+EXPLOIT4   := ./raw/exploit4.txt
+DEFAULTID  := 2015011310
+
+WORKDIR	   := /usr/src/app
+DUMPDIR    := ./dump
+
+run_ex   = cat $(1) | $(HEX2RAW) | $(BUFBOMB) -u $(if $(2), $(2), $(DEFAULTID))
+run_ex_n = cat $(1) | $(HEX2RAW) -n | $(BUFBOMB) -n -u $(if $(2), $(2), $(DEFAULTID))
+
+
 # Get the Ubuntu environment
 all: build run
 
 build:
-	docker build -t buflab .
+	docker build -t $(IMAGE) .
 
 run:
-	docker run --privileged -it --rm --name buflab-container buflab
+	docker run $(DFLAGS) --name $(CONTAINER) $(IMAGE)
 
 # Exploits Executable Codes
 # If you change files, PLEASE make build FIRST
 ex0:
-	docker run --privileged -i --rm --name buflab-container buflab \
-		/bin/bash -c "cat ./raw/exploit0.txt | ./bin/hex2raw | ./bin/bufbomb -u 2015011310"
+	docker run $(DFLAGS) --name $(CONTAINER) $(IMAGE) $(BASH) -c "$(call run_ex,$(EXPLOIT0))"
 
 ex1:
-	docker run --privileged -i --rm --name buflab-container buflab \
-		/bin/bash -c "cat ./raw/exploit1.txt | ./bin/hex2raw | ./bin/bufbomb -u 2015011310"
+	docker run $(DFLAGS) --name $(CONTAINER) $(IMAGE) $(BASH) -c "$(call run_ex,$(EXPLOIT1))"
 
 ex2:
-	docker run --privileged -i --rm --name buflab-container buflab \
-		/bin/bash -c "cat ./raw/exploit2.txt | ./bin/hex2raw | ./bin/bufbomb -u 2015011310"
+	docker run $(DFLAGS) --name $(CONTAINER) $(IMAGE) $(BASH) -c "$(call run_ex,$(EXPLOIT2))"
 
 ex3:
-	docker run --privileged -i --rm --name buflab-container buflab \
-		/bin/bash -c "cat ./raw/exploit3.txt | ./bin/hex2raw | ./bin/bufbomb -u 2015011310"
+	docker run $(DFLAGS) --name $(CONTAINER) $(IMAGE) $(BASH) -c "$(call run_ex,$(EXPLOIT3))"
 
 ex4:
-	docker run --privileged -i --rm --name buflab-container buflab \
-		/bin/bash -c "cat ./raw/exploit4.txt | ./bin/hex2raw -n | ./bin/bufbomb -n -u 2015011310"
+	docker run $(DFLAGS) --name $(CONTAINER) $(IMAGE) $(BASH) -c "$(call run_ex_n,$(EXPLOIT4))"
 
 # Tools
 cookie:
-	docker run --privileged -i --rm --name buflab-container buflab ./bin/makecookie $(ID)
+	docker run $(DFLAGS) --name $(CONTAINER) $(IMAGE) $(MAKECOOKIE) $(if $(ID),$(ID),$(DEFAULTID))
 
 dump:
 	mkdir -p dump
-	docker run --privileged -it --rm \
-		--name buflab-container \
-		-v $(PWD)/dump:/usr/src/app/dump \
-		buflab \
-		/usr/bin/objdump -d ./bin/bufbomb > dump/bufbomb.s
+	docker run $(DFLAGS) --name $(CONTAINER) \
+		-v $(PWD)/dump:$(WORKDIR)/dump \
+		$(IMAGE) \
+		/usr/bin/objdump -d $(BUFBOMB) > $(DUMPDIR)/bufbomb.s
