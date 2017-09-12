@@ -16,10 +16,17 @@ EXPLOIT4   := ./raw/exploit4.txt
 DEFAULTID  := 2015011310
 
 WORKDIR	   := /usr/src/app
-DUMPDIR    := ./dump
+DUMPDIR    := dump
 
 run_ex   = cat $(1) | $(HEX2RAW) | $(BUFBOMB) -u $(if $(2), $(2), $(DEFAULTID))
 run_ex_n = cat $(1) | $(HEX2RAW) -n | $(BUFBOMB) -n -u $(if $(2), $(2), $(DEFAULTID))
+
+docker_run = docker run $(DFLAGS) --name $(CONTAINER) $(IMAGE)
+
+docker_bash = $(docker_run) $(BASH) -c "$(1)"
+
+docker_run_ex   = $(call docker_bash,$(call run_ex,$(1)))
+docker_run_ex_n = $(call docker_bash,$(call run_ex_n,$(1)))
 
 
 # Get the Ubuntu environment
@@ -29,32 +36,35 @@ build:
 	docker build -t $(IMAGE) .
 
 run:
-	docker run $(DFLAGS) --name $(CONTAINER) $(IMAGE)
+	$(docker_run)
+
 
 # Exploits Executable Codes
 # If you change files, PLEASE make build FIRST
 ex0:
-	docker run $(DFLAGS) --name $(CONTAINER) $(IMAGE) $(BASH) -c "$(call run_ex,$(EXPLOIT0))"
+	$(call docker_run_ex,$(EXPLOIT0))
 
 ex1:
-	docker run $(DFLAGS) --name $(CONTAINER) $(IMAGE) $(BASH) -c "$(call run_ex,$(EXPLOIT1))"
+	$(call docker_run_ex,$(EXPLOIT1))
 
 ex2:
-	docker run $(DFLAGS) --name $(CONTAINER) $(IMAGE) $(BASH) -c "$(call run_ex,$(EXPLOIT2))"
+	$(call docker_run_ex,$(EXPLOIT2))
 
 ex3:
-	docker run $(DFLAGS) --name $(CONTAINER) $(IMAGE) $(BASH) -c "$(call run_ex,$(EXPLOIT3))"
+	$(call docker_run_ex,$(EXPLOIT3))
 
 ex4:
-	docker run $(DFLAGS) --name $(CONTAINER) $(IMAGE) $(BASH) -c "$(call run_ex_n,$(EXPLOIT4))"
+	$(call docker_run_ex_n,$(EXPLOIT4))
+
 
 # Tools
 cookie:
-	docker run $(DFLAGS) --name $(CONTAINER) $(IMAGE) $(MAKECOOKIE) $(if $(ID),$(ID),$(DEFAULTID))
+	$(docker_run) $(MAKECOOKIE) $(if $(ID),$(ID),$(DEFAULTID))
 
 dump:
-	mkdir -p dump
-	docker run $(DFLAGS) --name $(CONTAINER) \
-		-v $(PWD)/dump:$(WORKDIR)/dump \
+	mkdir -p $(DUMPDIR)
+	docker run $(DFLAGS) \
+		-v $(PWD)/$(DUMPDIR):$(WORKDIR)/$(DUMPDIR) \
+		--name $(CONTAINER) \
 		$(IMAGE) \
-		/usr/bin/objdump -d $(BUFBOMB) > $(DUMPDIR)/bufbomb.s
+		$(BASH) -c "objdump -d $(BUFBOMB) > $(DUMPDIR)/bufbomb.s"
